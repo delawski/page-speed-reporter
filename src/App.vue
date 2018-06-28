@@ -4,12 +4,11 @@
 				:columns="setupColumns"
 				:rows="pages">
 			<div slot="table-actions">
-				<button @click.prevent="runPageSpeedTest">Run PageSpeed Insights Test</button>
-				<button @click.prevent="exportData">Export Data</button>
-				<template v-if="isUploadEnabled">
-					<button @click.prevent="triggerFileUpload">Import Data</button>
-					<input type="file" accept="application/json" ref="fileUpload" @change="uploadFile">
-				</template>
+				<app-table-actions
+						@start="start"
+						@export="exportData"
+						@import="importData">
+				</app-table-actions>
 			</div>
 		</vue-good-table>
 		<br><br>
@@ -25,14 +24,16 @@
 
 <script>
 	import axios from 'axios';
+	import TableActions from './components/TableActions.vue';
 
 	export default {
 		name: 'app',
+		components: {
+			appTableActions: TableActions,
+		},
 		methods: {
-			runPageSpeedTest() {
-				const testPages = this.pages;
-
-				testPages.map( testPage => {
+			start() {
+				this.pages.map( testPage => {
 					axios.all( [ this.getScoreRequest( testPage.page, 'mobile' ), this.getScoreRequest( testPage.page, 'desktop' ) ] )
 						.then( axios.spread( ( mobile, desktop ) => {
 							this.parsePageSpeedResults( mobile.data, desktop.data, testPage.template );
@@ -106,33 +107,6 @@
 				a.download = `reporter-${ now.slice( 0, 10 ) }.json`;
 				a.click();
 			},
-			triggerFileUpload( e ) {
-				e.target.blur();
-				this.$refs.fileUpload.click();
-			},
-			uploadFile( e ) {
-				const { currentTarget } = e;
-
-				if ( 0 === currentTarget.files.length ) {
-					return;
-				}
-
-				const reader = new FileReader();
-				reader.onload = ( { target } ) => {
-					if ( 2 !== target.readyState ) {
-						return;
-					}
-
-					if ( target.error ) {
-						console.error( 'Error while reading file.' );
-						return;
-					}
-
-					this.importData( target.result );
-				};
-
-				reader.readAsText( currentTarget.files[0] );
-			},
 			importData( rawData ) {
 				const data = JSON.parse( rawData );
 
@@ -146,11 +120,6 @@
 					this.rows = data.rows;
 				}
 			},
-		},
-		computed: {
-			isUploadEnabled() {
-				return undefined !== window.FileReader;
-			}
 		},
 		data() {
 			return {
