@@ -1,41 +1,94 @@
 <template>
-	<div id="app">
-		<vue-good-table
-				:columns="setupColumns"
-				:rows="pages">
-			<div slot="table-actions">
-				<app-table-actions
-						@start="start"
-						@export="exportData"
-						@import="importData">
-				</app-table-actions>
-			</div>
-		</vue-good-table>
-		<br><br>
-		<vue-good-table
-				:columns="columns"
-				:rows="rows"
-				:groupOptions="{
-				enabled: true
-			}">
-		</vue-good-table>
-	</div>
+	<el-container id="app">
+		<el-header>
+			<app-header
+					:isInProgress="progress < 100"
+					@start="start"
+					@export="exportData"
+					@import="importData"/>
+		</el-header>
+		<el-main>
+			<el-table
+					:data="results"
+					class="results">
+				<el-table-column
+						fixed
+						prop="date"
+						label="Tested Date">
+				</el-table-column>
+				<el-table-column
+						prop="page"
+						label="Page">
+				</el-table-column>
+				<el-table-column
+						prop="template"
+						label="Template">
+				</el-table-column>
+				<el-table-column label="Mobile">
+					<el-table-column
+							label="Speed">
+						<template slot-scope="scope">
+							{{ scope.row.mobile.category }}<br>
+							{{ scope.row.mobile.fcp }}s FCP
+							{{ scope.row.mobile.dcl }}s DCL
+						</template>
+					</el-table-column>
+					<el-table-column
+							prop="mobile.score"
+							label="Optimization">
+					</el-table-column>
+					<el-table-column
+							prop="mobile.prioritizeVisibleContent"
+							label="Prioritize Visible Content">
+					</el-table-column>
+				</el-table-column>
+				<el-table-column label="Desktop">
+					<el-table-column
+							label="Speed">
+						<template slot-scope="scope">
+							{{ scope.row.desktop.category }}<br>
+							{{ scope.row.desktop.fcp }}s FCP
+							{{ scope.row.desktop.dcl }}s DCL
+						</template>
+					</el-table-column>
+					<el-table-column
+							prop="desktop.score"
+							label="Optimization">
+					</el-table-column>
+					<el-table-column
+							prop="desktop.prioritizeVisibleContent"
+							label="Prioritize Visible Content">
+					</el-table-column>
+				</el-table-column>
+			</el-table>
+		</el-main>
+		<el-progress
+				:percentage="progress"
+				:showText="false"
+				:strokeWidth="4"></el-progress>
+	</el-container>
 </template>
 
 <script>
 	import axios from 'axios';
-	import TableActions from './components/TableActions.vue';
+	import Header from './components/Header.vue';
 
 	export default {
 		name: 'app',
 		components: {
-			appTableActions: TableActions,
+			appHeader: Header,
 		},
 		methods: {
 			start() {
+				this.requestsTotal = 0;
+				this.requestsResolved = 0;
+
 				this.pages.map( testPage => {
+					this.requestsTotal++;
+
 					axios.all( [ this.getScoreRequest( testPage.page, 'mobile' ), this.getScoreRequest( testPage.page, 'desktop' ) ] )
 						.then( axios.spread( ( mobile, desktop ) => {
+							this.requestsResolved++;
 							this.parsePageSpeedResults( mobile.data, desktop.data, testPage.template );
 						} ) );
 				} );
@@ -47,35 +100,20 @@
 			},
 			parsePageSpeedResults( mobileData, desktopData, template = '' ) {
 				const data = {
-					mode:     'span',
-					label:    this.formatRowHeader( mobileData.id, template ),
-					html:     true,
-					children: [
-						{
-							date:                            this.formatDateString(),
-							notes:                           '',
-							strategy:                        'mobile',
-							mobileSpeed:                     this.formatScoreString( mobileData ),
-							mobileScore:                     mobileData.ruleGroups.SPEED.score,
-							desktopSpeed:                    this.formatScoreString( desktopData ),
-							desktopScore:                    desktopData.ruleGroups.SPEED.score,
-							mobilePrioritizeVisibleContent:  this.getPrioritizeVisibleContentFlag( mobileData ),
-							desktopPrioritizeVisibleContent: this.getPrioritizeVisibleContentFlag( desktopData ),
-						}
-					],
+					date:     this.formatDateString(),
+					page:     mobileData.id,
+					template: template,
+					mobile:   this.getFormattedMetrics( mobileData ),
+					desktop:  this.getFormattedMetrics( desktopData ),
 				};
 
-				const rowIndex = this.rows.findIndex( row => row.label === mobileData.id );
+				const index = this.results.findIndex( result => result.page === mobileData.id );
 
-				if ( -1 < rowIndex ) {
-					this.rows.splice( rowIndex, 1, data );
+				if ( -1 < index ) {
+					this.results.splice( index, 1, data );
 				} else {
-					this.rows.push( data );
+					this.results.push( data );
 				}
-			},
-			formatRowHeader( url, template ) {
-				return `<span class="domain-name">${ url.match( /\/\/([^/]*)/ )[1] }</span> ${ template }<br>
-					<small><a href="${ url }">${ url }</a></small>`;
 			},
 			formatDateString( date = new Date() ) {
 				return [
@@ -84,22 +122,21 @@
 					( '0' + date.getDate() ).slice( -2 ),
 				].join( '-' );
 			},
-			formatScoreString( data ) {
-				return `
-					${ data.loadingExperience.overall_category }<br>
-					${ ( data.loadingExperience.metrics.FIRST_CONTENTFUL_PAINT_MS.median / 100 ).toFixed( 1 ) }s&nbsp;FCP
-					${ ( data.loadingExperience.metrics.DOM_CONTENT_LOADED_EVENT_FIRED_MS.median / 100 ).toFixed( 1 ) }s&nbsp;DCL`;
-			},
-			getPrioritizeVisibleContentFlag( data ) {
-				return 0 === data.formattedResults.ruleResults.PrioritizeVisibleContent.ruleImpact ? 'Yes' : 'No';
+			getFormattedMetrics( data ) {
+				return {
+					score:                    data.ruleGroups.SPEED.score,
+					category:                 data.loadingExperience.overall_category,
+					fcp:                      (data.loadingExperience.metrics.FIRST_CONTENTFUL_PAINT_MS.median / 100).toFixed( 1 ),
+					dcl:                      (data.loadingExperience.metrics.DOM_CONTENT_LOADED_EVENT_FIRED_MS.median / 100).toFixed( 1 ),
+					prioritizeVisibleContent: 0 === data.formattedResults.ruleResults.PrioritizeVisibleContent.ruleImpact ? 'Yes' : 'No',
+				}
 			},
 			exportData() {
 				const now = new Date().toISOString();
 				const data = {
 					createdAt: now,
-					setup:     this.setupRows,
-					columns:   this.columns,
-					rows:      this.rows,
+					pages:     this.pages,
+					results:   this.results,
 				};
 				const a    = document.createElement( 'a' );
 				const file = new Blob( [ JSON.stringify( data ) ], { type: 'text/plain' } );
@@ -110,117 +147,65 @@
 			importData( rawData ) {
 				const data = JSON.parse( rawData );
 
-				if ( data.setup && 0 < data.setup.length ) {
-					this.pages = data.setup;
+				if ( data.pages && 0 < data.pages.length ) {
+					this.pages = data.pages;
 				}
-				if ( data.columns && 0 < data.columns.length ) {
-					this.columns = data.columns;
-				}
-				if ( data.rows && 0 < data.rows.length ) {
-					this.rows = data.rows;
+				if ( data.results && 0 < data.results.length ) {
+					this.results = data.results;
 				}
 			},
 		},
 		data() {
 			return {
-				columns: [
+				pages: [
 					{
-						label: 'Tested Date',
-						field: 'date',
-						type: 'date',
-						dateInputFormat: 'YYYY-MM-DD',
-						dateOutputFormat: 'MM/DD/YYYY',
+						page: 'https://heavy.com',
+						template: 'Home',
 					},
 					{
-						label: 'Test notes',
-						field: 'notes',
-					},
-					{
-						label: 'Mobile Speed',
-						field: 'mobileSpeed',
-						html: true,
-					},
-					{
-						label: 'Mobile Optimization',
-						field: 'mobileScore',
-						type: 'number',
-					},
-					{
-						label: 'Desktop Speed',
-						field: 'desktopSpeed',
-						html: true,
-					},
-					{
-						label: 'Desktop Optimization',
-						field: 'desktopScore',
-						type: 'number',
-					},
-					{
-						label: 'Mobile Prioritize Visible Content',
-						field: 'mobilePrioritizeVisibleContent',
-					},
-					{
-						label: 'Desktop Prioritize Visible Content',
-						field: 'desktopPrioritizeVisibleContent',
+						page: 'https://ahoramismo.com',
+						template: 'Home',
 					},
 				],
-				rows: [],
-				setupColumns: [
-					{
-						label: 'Page',
-						field: 'page',
-					},
-					{
-						label: 'Template',
-						field: 'template',
-					},
-				],
-				pages: [],
+				results: [],
+				requestsTotal: 0,
+				requestsResolved: 0,
 			}
+		},
+		computed: {
+			progress() {
+				let progress;
+
+				if ( 0 === this.requestsTotal ) {
+					progress = 100;
+				} else {
+					progress = Math.round( this.requestsResolved / this.requestsTotal * 100 );
+				}
+				if ( 0 === progress ) {
+					progress = 1;
+				}
+
+				return progress;
+			},
 		},
 	}
 </script>
 
-<style>
+<style scoped lang="scss">
 	#app {
-		font-family: Helvetica, Arial, sans-serif;
+		font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
-		text-align: center;
-		color: #2c3e50;
-		margin-top: 60px;
 	}
 
-	h1, h2 {
-		font-weight: normal;
+	.results {
+		width: 100%;
 	}
 
-	ul {
-		list-style-type: none;
-		padding: 0;
-	}
-
-	li {
-		display: inline-block;
-		margin: 0 10px;
-	}
-
-	a {
-		color: #42b983;
-	}
-	
-	.domain-name {
-		display: inline-block;
-		padding: 1px 4px;
-		border-radius: 2px;
-		letter-spacing: 0.5px;
-		font-size: 66%;
-		text-transform: uppercase;
-		background-color: #DCDFE6;
-		opacity: 0.6;
-	}
-
-	input[type='file'] {
-		display: none;
+	.el-progress {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
 	}
 </style>
