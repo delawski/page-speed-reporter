@@ -1,42 +1,166 @@
 <template>
-	<div id="app">
-		<vue-good-table
-				:columns="setupColumns"
-				:rows="pages">
-			<div slot="table-actions">
-				<button @click.prevent="runPageSpeedTest">Run PageSpeed Insights Test</button>
-				<button @click.prevent="exportData">Export Data</button>
-				<template v-if="isUploadEnabled">
-					<button @click.prevent="triggerFileUpload">Import Data</button>
-					<input type="file" accept="application/json" ref="fileUpload" @change="uploadFile">
-				</template>
-			</div>
-		</vue-good-table>
-		<br><br>
-		<vue-good-table
-				:columns="columns"
-				:rows="rows"
-				:groupOptions="{
-				enabled: true
-			}">
-		</vue-good-table>
-	</div>
+	<el-container id="app">
+		<el-header>
+			<app-header
+					:isInProgress="progress < 100"
+					@start="start"
+					@export="exportData"
+					@import="importData"/>
+		</el-header>
+		<el-main>
+			<h3>Test Pages</h3>
+			<el-table
+					:data="pages"
+					border
+					size="small"
+					class="table"
+					empty-text="No data available">
+				<el-table-column
+						prop="template"
+						label="Template Name">
+				</el-table-column>
+				<el-table-column
+						prop="page"
+						label="Page URL">
+					<template slot-scope="scope">
+						<a :href="scope.row.page" target="_blank" rel="noreferrer noopener">
+							<i class="el-icon-view"></i> {{ scope.row.page }}
+						</a>
+					</template>
+				</el-table-column>
+				<el-table-column
+						fixed="right"
+						label="Actions">
+					<template slot-scope="scope">
+						<el-button
+								@click.native.prevent="deleteRow( scope.$index, pages )"
+								type="text"
+								size="small">
+							Remove
+						</el-button>
+					</template>
+				</el-table-column>
+			</el-table>
+
+			<app-form @addPage="addPage"/>
+
+			<h3>Results</h3>
+			<el-table
+					:data="results"
+					border
+					size="small"
+					class="table"
+					empty-text="No data available">
+				<el-table-column
+						fixed
+						prop="template"
+						label="Template">
+				</el-table-column>
+				<el-table-column
+						prop="page"
+						label="Page">
+					<template slot-scope="scope">
+						<a :href="scope.row.page" target="_blank" rel="noreferrer noopener">
+							<i class="el-icon-view"></i> {{ scope.row.page }}
+						</a>
+					</template>
+				</el-table-column>
+				<el-table-column
+						prop="date"
+						label="Tested Date">
+				</el-table-column>
+				<el-table-column label="Mobile">
+					<el-table-column
+							label="Speed">
+						<template slot-scope="scope">
+							{{ scope.row.mobile.category }}<br>
+							<span class="nowrap">{{ scope.row.mobile.fcp }}s FCP</span>
+							<span class="nowrap">{{ scope.row.mobile.dcl }}s DCL</span>
+						</template>
+					</el-table-column>
+					<el-table-column
+							prop="mobile.score"
+							label="Optimization">
+					</el-table-column>
+					<el-table-column
+							prop="mobile.prioritizeVisibleContent"
+							label="Prioritize Visible Content">
+					</el-table-column>
+				</el-table-column>
+				<el-table-column label="Desktop">
+					<el-table-column
+							label="Speed">
+						<template slot-scope="scope">
+							{{ scope.row.desktop.category }}<br>
+							<span class="nowrap">{{ scope.row.mobile.fcp }}s FCP</span>
+							<span class="nowrap">{{ scope.row.mobile.dcl }}s DCL</span>
+						</template>
+					</el-table-column>
+					<el-table-column
+							prop="desktop.score"
+							label="Optimization">
+					</el-table-column>
+					<el-table-column
+							prop="desktop.prioritizeVisibleContent"
+							label="Prioritize Visible Content">
+					</el-table-column>
+				</el-table-column>
+				<el-table-column
+						fixed="right"
+						label="Actions">
+					<template slot-scope="scope">
+						<el-button
+								@click.native.prevent="deleteRow( scope.$index, results )"
+								type="text"
+								size="small">
+							Remove
+						</el-button>
+					</template>
+				</el-table-column>
+			</el-table>
+		</el-main>
+		<el-progress
+				:percentage="progress"
+				:showText="false"
+				:strokeWidth="4"></el-progress>
+	</el-container>
 </template>
 
 <script>
 	import axios from 'axios';
+	import Header from './components/Header.vue';
+	import Form from './components/Form.vue';
 
 	export default {
 		name: 'app',
+		components: {
+			appHeader: Header,
+			appForm: Form,
+		},
 		methods: {
-			runPageSpeedTest() {
-				const testPages = this.pages;
+			start() {
+				this.requestsTotal = 0;
+				this.requestsResolved = 0;
 
-				testPages.map( testPage => {
+				this.pages.map( testPage => {
+					this.requestsTotal++;
+
 					axios.all( [ this.getScoreRequest( testPage.page, 'mobile' ), this.getScoreRequest( testPage.page, 'desktop' ) ] )
 						.then( axios.spread( ( mobile, desktop ) => {
 							this.parsePageSpeedResults( mobile.data, desktop.data, testPage.template );
-						} ) );
+						} ) )
+						.catch( error => {
+							console.log( error );
+						} ).then( () => {
+							this.requestsResolved++;
+
+							if ( this.requestsResolved === this.requestsTotal ) {
+								this.$message({
+									message: 'All tests have been completed.',
+									type: 'success'
+								});
+							}
+						} );
 				} );
 			},
 			getScoreRequest( url, strategy ) {
@@ -46,35 +170,22 @@
 			},
 			parsePageSpeedResults( mobileData, desktopData, template = '' ) {
 				const data = {
-					mode:     'span',
-					label:    this.formatRowHeader( mobileData.id, template ),
-					html:     true,
-					children: [
-						{
-							date:                            this.formatDateString(),
-							notes:                           '',
-							strategy:                        'mobile',
-							mobileSpeed:                     this.formatScoreString( mobileData ),
-							mobileScore:                     mobileData.ruleGroups.SPEED.score,
-							desktopSpeed:                    this.formatScoreString( desktopData ),
-							desktopScore:                    desktopData.ruleGroups.SPEED.score,
-							mobilePrioritizeVisibleContent:  this.getPrioritizeVisibleContentFlag( mobileData ),
-							desktopPrioritizeVisibleContent: this.getPrioritizeVisibleContentFlag( desktopData ),
-						}
-					],
+					date:     new Date().toUTCString(),
+					page:     mobileData.id,
+					template: template,
+					mobile:   this.getFormattedMetrics( mobileData ),
+					desktop:  this.getFormattedMetrics( desktopData ),
 				};
 
-				const rowIndex = this.rows.findIndex( row => row.label === mobileData.id );
+				const index = this.results.findIndex( result => {
+					return result.page === mobileData.id && result.date === data.date;
+				} );
 
-				if ( -1 < rowIndex ) {
-					this.rows.splice( rowIndex, 1, data );
+				if ( -1 < index ) {
+					this.results.splice( index, 1, data );
 				} else {
-					this.rows.push( data );
+					this.results.push( data );
 				}
-			},
-			formatRowHeader( url, template ) {
-				return `<span class="domain-name">${ url.match( /\/\/([^/]*)/ )[1] }</span> ${ template }<br>
-					<small><a href="${ url }">${ url }</a></small>`;
 			},
 			formatDateString( date = new Date() ) {
 				return [
@@ -83,22 +194,21 @@
 					( '0' + date.getDate() ).slice( -2 ),
 				].join( '-' );
 			},
-			formatScoreString( data ) {
-				return `
-					${ data.loadingExperience.overall_category }<br>
-					${ ( data.loadingExperience.metrics.FIRST_CONTENTFUL_PAINT_MS.median / 100 ).toFixed( 1 ) }s&nbsp;FCP
-					${ ( data.loadingExperience.metrics.DOM_CONTENT_LOADED_EVENT_FIRED_MS.median / 100 ).toFixed( 1 ) }s&nbsp;DCL`;
-			},
-			getPrioritizeVisibleContentFlag( data ) {
-				return 0 === data.formattedResults.ruleResults.PrioritizeVisibleContent.ruleImpact ? 'Yes' : 'No';
+			getFormattedMetrics( data ) {
+				return {
+					score:                    data.ruleGroups.SPEED.score,
+					category:                 data.loadingExperience.overall_category,
+					fcp:                      (data.loadingExperience.metrics.FIRST_CONTENTFUL_PAINT_MS.median / 100).toFixed( 1 ),
+					dcl:                      (data.loadingExperience.metrics.DOM_CONTENT_LOADED_EVENT_FIRED_MS.median / 100).toFixed( 1 ),
+					prioritizeVisibleContent: 0 === data.formattedResults.ruleResults.PrioritizeVisibleContent.ruleImpact ? 'Yes' : 'No',
+				}
 			},
 			exportData() {
 				const now = new Date().toISOString();
 				const data = {
 					createdAt: now,
-					setup:     this.setupRows,
-					columns:   this.columns,
-					rows:      this.rows,
+					pages:     this.pages,
+					results:   this.results,
 				};
 				const a    = document.createElement( 'a' );
 				const file = new Blob( [ JSON.stringify( data ) ], { type: 'text/plain' } );
@@ -106,152 +216,76 @@
 				a.download = `reporter-${ now.slice( 0, 10 ) }.json`;
 				a.click();
 			},
-			triggerFileUpload( e ) {
-				e.target.blur();
-				this.$refs.fileUpload.click();
-			},
-			uploadFile( e ) {
-				const { currentTarget } = e;
-
-				if ( 0 === currentTarget.files.length ) {
-					return;
-				}
-
-				const reader = new FileReader();
-				reader.onload = ( { target } ) => {
-					if ( 2 !== target.readyState ) {
-						return;
-					}
-
-					if ( target.error ) {
-						console.error( 'Error while reading file.' );
-						return;
-					}
-
-					this.importData( target.result );
-				};
-
-				reader.readAsText( currentTarget.files[0] );
-			},
 			importData( rawData ) {
 				const data = JSON.parse( rawData );
 
-				if ( data.setup && 0 < data.setup.length ) {
-					this.pages = data.setup;
+				if ( data.pages && 0 < data.pages.length ) {
+					this.pages = data.pages;
 				}
-				if ( data.columns && 0 < data.columns.length ) {
-					this.columns = data.columns;
-				}
-				if ( data.rows && 0 < data.rows.length ) {
-					this.rows = data.rows;
+				if ( data.results && 0 < data.results.length ) {
+					this.results = data.results;
 				}
 			},
-		},
-		computed: {
-			isUploadEnabled() {
-				return undefined !== window.FileReader;
+			addPage( data ) {
+				const index = this.pages.findIndex( item => {
+					return data.page === item.page;
+				} );
+
+				if ( -1 === index ) {
+					this.pages.push( data );
+				}
+			},
+			deleteRow( index, target ) {
+				target.splice( index, 1 );
 			}
 		},
 		data() {
 			return {
-				columns: [
-					{
-						label: 'Tested Date',
-						field: 'date',
-						type: 'date',
-						dateInputFormat: 'YYYY-MM-DD',
-						dateOutputFormat: 'MM/DD/YYYY',
-					},
-					{
-						label: 'Test notes',
-						field: 'notes',
-					},
-					{
-						label: 'Mobile Speed',
-						field: 'mobileSpeed',
-						html: true,
-					},
-					{
-						label: 'Mobile Optimization',
-						field: 'mobileScore',
-						type: 'number',
-					},
-					{
-						label: 'Desktop Speed',
-						field: 'desktopSpeed',
-						html: true,
-					},
-					{
-						label: 'Desktop Optimization',
-						field: 'desktopScore',
-						type: 'number',
-					},
-					{
-						label: 'Mobile Prioritize Visible Content',
-						field: 'mobilePrioritizeVisibleContent',
-					},
-					{
-						label: 'Desktop Prioritize Visible Content',
-						field: 'desktopPrioritizeVisibleContent',
-					},
-				],
-				rows: [],
-				setupColumns: [
-					{
-						label: 'Page',
-						field: 'page',
-					},
-					{
-						label: 'Template',
-						field: 'template',
-					},
-				],
 				pages: [],
+				results: [],
+				requestsTotal: 0,
+				requestsResolved: 0,
 			}
+		},
+		computed: {
+			progress() {
+				let progress;
+
+				if ( 0 === this.requestsTotal ) {
+					progress = 100;
+				} else {
+					progress = Math.round( this.requestsResolved / this.requestsTotal * 100 );
+				}
+				if ( 0 === progress ) {
+					progress = 1;
+				}
+
+				return progress;
+			},
 		},
 	}
 </script>
 
-<style>
+<style lang="scss">
 	#app {
-		font-family: Helvetica, Arial, sans-serif;
+		font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
-		text-align: center;
-		color: #2c3e50;
-		margin-top: 60px;
 	}
 
-	h1, h2 {
-		font-weight: normal;
+	.table {
+		width: 100%;
+		margin-bottom: 20px;
 	}
 
-	ul {
-		list-style-type: none;
-		padding: 0;
+	.nowrap {
+		white-space: nowrap;
 	}
 
-	li {
-		display: inline-block;
-		margin: 0 10px;
-	}
-
-	a {
-		color: #42b983;
-	}
-	
-	.domain-name {
-		display: inline-block;
-		padding: 1px 4px;
-		border-radius: 2px;
-		letter-spacing: 0.5px;
-		font-size: 66%;
-		text-transform: uppercase;
-		background-color: #DCDFE6;
-		opacity: 0.6;
-	}
-
-	input[type='file'] {
-		display: none;
+	.el-progress {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
 	}
 </style>
