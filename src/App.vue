@@ -8,29 +8,74 @@
 					@import="importData"/>
 		</el-header>
 		<el-main>
+			<h3>Test Pages</h3>
+			<el-table
+					:data="pages"
+					border
+					size="small"
+					class="table"
+					empty-text="No data available">
+				<el-table-column
+						prop="template"
+						label="Template Name">
+				</el-table-column>
+				<el-table-column
+						prop="page"
+						label="Page URL">
+					<template slot-scope="scope">
+						<a :href="scope.row.page" target="_blank" rel="noreferrer noopener">
+							<i class="el-icon-view"></i> {{ scope.row.page }}
+						</a>
+					</template>
+				</el-table-column>
+				<el-table-column
+						fixed="right"
+						label="Actions">
+					<template slot-scope="scope">
+						<el-button
+								@click.native.prevent="deleteRow( scope.$index, pages )"
+								type="text"
+								size="small">
+							Remove
+						</el-button>
+					</template>
+				</el-table-column>
+			</el-table>
+
+			<app-form @addPage="addPage"/>
+
+			<h3>Results</h3>
 			<el-table
 					:data="results"
-					class="results">
+					border
+					size="small"
+					class="table"
+					empty-text="No data available">
 				<el-table-column
 						fixed
-						prop="date"
-						label="Tested Date">
+						prop="template"
+						label="Template">
 				</el-table-column>
 				<el-table-column
 						prop="page"
 						label="Page">
+					<template slot-scope="scope">
+						<a :href="scope.row.page" target="_blank" rel="noreferrer noopener">
+							<i class="el-icon-view"></i> {{ scope.row.page }}
+						</a>
+					</template>
 				</el-table-column>
 				<el-table-column
-						prop="template"
-						label="Template">
+						prop="date"
+						label="Tested Date">
 				</el-table-column>
 				<el-table-column label="Mobile">
 					<el-table-column
 							label="Speed">
 						<template slot-scope="scope">
 							{{ scope.row.mobile.category }}<br>
-							{{ scope.row.mobile.fcp }}s FCP
-							{{ scope.row.mobile.dcl }}s DCL
+							<span class="nowrap">{{ scope.row.mobile.fcp }}s FCP</span>
+							<span class="nowrap">{{ scope.row.mobile.dcl }}s DCL</span>
 						</template>
 					</el-table-column>
 					<el-table-column
@@ -47,8 +92,8 @@
 							label="Speed">
 						<template slot-scope="scope">
 							{{ scope.row.desktop.category }}<br>
-							{{ scope.row.desktop.fcp }}s FCP
-							{{ scope.row.desktop.dcl }}s DCL
+							<span class="nowrap">{{ scope.row.mobile.fcp }}s FCP</span>
+							<span class="nowrap">{{ scope.row.mobile.dcl }}s DCL</span>
 						</template>
 					</el-table-column>
 					<el-table-column
@@ -59,6 +104,18 @@
 							prop="desktop.prioritizeVisibleContent"
 							label="Prioritize Visible Content">
 					</el-table-column>
+				</el-table-column>
+				<el-table-column
+						fixed="right"
+						label="Actions">
+					<template slot-scope="scope">
+						<el-button
+								@click.native.prevent="deleteRow( scope.$index, results )"
+								type="text"
+								size="small">
+							Remove
+						</el-button>
+					</template>
 				</el-table-column>
 			</el-table>
 		</el-main>
@@ -72,11 +129,13 @@
 <script>
 	import axios from 'axios';
 	import Header from './components/Header.vue';
+	import Form from './components/Form.vue';
 
 	export default {
 		name: 'app',
 		components: {
 			appHeader: Header,
+			appForm: Form,
 		},
 		methods: {
 			start() {
@@ -88,9 +147,20 @@
 
 					axios.all( [ this.getScoreRequest( testPage.page, 'mobile' ), this.getScoreRequest( testPage.page, 'desktop' ) ] )
 						.then( axios.spread( ( mobile, desktop ) => {
-							this.requestsResolved++;
 							this.parsePageSpeedResults( mobile.data, desktop.data, testPage.template );
-						} ) );
+						} ) )
+						.catch( error => {
+							console.log( error );
+						} ).then( () => {
+							this.requestsResolved++;
+
+							if ( this.requestsResolved === this.requestsTotal ) {
+								this.$message({
+									message: 'All tests have been completed.',
+									type: 'success'
+								});
+							}
+						} );
 				} );
 			},
 			getScoreRequest( url, strategy ) {
@@ -100,14 +170,16 @@
 			},
 			parsePageSpeedResults( mobileData, desktopData, template = '' ) {
 				const data = {
-					date:     this.formatDateString(),
+					date:     new Date().toUTCString(),
 					page:     mobileData.id,
 					template: template,
 					mobile:   this.getFormattedMetrics( mobileData ),
 					desktop:  this.getFormattedMetrics( desktopData ),
 				};
 
-				const index = this.results.findIndex( result => result.page === mobileData.id );
+				const index = this.results.findIndex( result => {
+					return result.page === mobileData.id && result.date === data.date;
+				} );
 
 				if ( -1 < index ) {
 					this.results.splice( index, 1, data );
@@ -154,19 +226,22 @@
 					this.results = data.results;
 				}
 			},
+			addPage( data ) {
+				const index = this.pages.findIndex( item => {
+					return data.page === item.page;
+				} );
+
+				if ( -1 === index ) {
+					this.pages.push( data );
+				}
+			},
+			deleteRow( index, target ) {
+				target.splice( index, 1 );
+			}
 		},
 		data() {
 			return {
-				pages: [
-					{
-						page: 'https://heavy.com',
-						template: 'Home',
-					},
-					{
-						page: 'https://ahoramismo.com',
-						template: 'Home',
-					},
-				],
+				pages: [],
 				results: [],
 				requestsTotal: 0,
 				requestsResolved: 0,
@@ -191,15 +266,20 @@
 	}
 </script>
 
-<style scoped lang="scss">
+<style lang="scss">
 	#app {
 		font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 	}
 
-	.results {
+	.table {
 		width: 100%;
+		margin-bottom: 20px;
+	}
+
+	.nowrap {
+		white-space: nowrap;
 	}
 
 	.el-progress {

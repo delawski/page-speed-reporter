@@ -4,11 +4,6 @@
 		<nav class="actions">
 			<el-button
 					plain
-					type="primary"
-					:icon="icon"
-					@click.prevent="$emit( 'start' )">Run Test</el-button>
-			<el-button
-					plain
 					icon="el-icon-download"
 					@click.prevent="$emit( 'export' )">Export</el-button>
 			<template v-if="isUploadEnabled">
@@ -18,6 +13,11 @@
 						@click.prevent="triggerFileUpload">Import</el-button>
 				<input type="file" accept="application/json" ref="fileUpload" @change="uploadFile">
 			</template>
+			<el-button
+					type="primary"
+					:icon="icon"
+					class="button"
+					@click.prevent="$emit( 'start' )">Run Test</el-button>
 		</nav>
 	</div>
 </template>
@@ -59,7 +59,7 @@
 				return undefined !== window.FileReader;
 			},
 			icon() {
-				return this.isInProgress ? 'el-icon-loading' : 'el-icon-circle-plus-outline';
+				return this.isInProgress ? 'el-icon-loading' : 'el-icon-caret-right';
 			}
 		},
 	}
@@ -73,6 +73,10 @@
 		max-height: 100%;
 		border-bottom: 1px solid #efefef;
 		padding-bottom: 5px;
+	}
+
+	.button {
+		margin-left: 10px;
 	}
 
 	input[type='file'] {
